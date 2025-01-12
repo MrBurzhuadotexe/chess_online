@@ -65,7 +65,8 @@ int main() {
         close(server_fd);
         exit(EXIT_FAILURE);
     }
-    printf("First client connected.\n");
+    printf("White player connected.\n");
+    send(white_player, "w", 1, 0);
 
     black_player = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
     if (black_player < 0) {
@@ -73,7 +74,9 @@ int main() {
         close(server_fd);
         exit(EXIT_FAILURE);
     }
-    printf("Second client connected.\n");
+    printf("Black player connected.\n");
+    send(black_player, "b", 1, 0);
+
 
     // Create threads to handle communication for each client
     pthread_t thread1, thread2;
