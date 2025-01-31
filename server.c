@@ -8,122 +8,120 @@
 #include <sys/socket.h>
 #include <pthread.h>
 
-#define PORT 8080
-#define BUF_SIZE 1024
+#define PORT 8080         // Ustala port serwera
+#define BUF_SIZE 1024     // Ustala rozmiar bufora
 
-int white_player, black_player; // Sockets for the two clients
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER; // Mutex for synchronization
-int turn = 0; // Variable to keep track of whose turn it is (0 for client1, 1 for client2)
+int white_player, black_player; // Sockets dla dwóch klientów
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER; // Mutex do synchronizacji
+int turn = 0; // Zmienna do śledzenia, czyja kolej (0 dla klienta1, 1 dla klienta2)
 
-void *handle_client(void *socket_desc);
+void *handle_client(void *socket_desc); // Deklaracja funkcji do obsługi klienta
 
 int main() {
-    int server_fd;
-    struct sockaddr_in address;
+    int server_fd; // Deskryptor gniazda serwera
+    struct sockaddr_in address; // Struktura adresu
     int addrlen = sizeof(address);
-    int opt = 1; // Option for setsockopt
+    int opt = 1; // Opcja dla setsockopt
 
-    // Create socket file descriptor
+    // Tworzenie deskryptora gniazda
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-        perror("socket failed");
+        perror("socket failed"); // Błąd przy tworzeniu gniazda
         exit(EXIT_FAILURE);
     }
 
-    // Set socket options to allow reuse of the address
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR
-            , &opt, sizeof(opt)) < 0) {
-        perror("setsockopt");
+    // Ustawienie opcji gniazda, aby zezwolić na ponowne użycie adresu
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        perror("setsockopt"); // Błąd przy ustawieniu opcji gniazda
         close(server_fd);
         exit(EXIT_FAILURE);
     }
 
-    // Set address information
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    // Ustawienie informacji o adresie
+    address.sin_family = AF_INET; // Rodzina adresów (IPv4)
+    address.sin_addr.s_addr = INADDR_ANY; // Akceptacja połączeń na dowolnym adresie
+    address.sin_port = htons(PORT); // Ustawienie portu
 
-    // Bind the socket to the address and port number
+    // Powiązanie gniazda z adresem i numerem portu
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        perror("bind failed");
+        perror("bind failed"); // Błąd przy wiązaniu gniazda
         close(server_fd);
         exit(EXIT_FAILURE);
     }
 
-    // Start listening for connections
+    // Rozpoczęcie nasłuchiwania połączeń
     if (listen(server_fd, 2) < 0) {
-        perror("listen");
+        perror("listen"); // Błąd przy nasłuchiwaniu
         close(server_fd);
         exit(EXIT_FAILURE);
     }
 
     printf("Server listening on port %d\n", PORT);
 
-    // Accept two connections
+    // Akceptacja dwóch połączeń
     white_player = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
     if (white_player < 0) {
-        perror("accept");
+        perror("accept"); // Błąd przy akceptacji połączenia
         close(server_fd);
         exit(EXIT_FAILURE);
     }
     printf("White player connected.\n");
-    send(white_player, "w", 1, 0);
+    send(white_player, "w", 1, 0); // Wysyłanie informacji o kolorze
 
     black_player = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
     if (black_player < 0) {
-        perror("accept");
+        perror("accept"); // Błąd przy akceptacji połączenia
         close(server_fd);
         exit(EXIT_FAILURE);
     }
     printf("Black player connected.\n");
-    send(black_player, "b", 1, 0);
+    send(black_player, "b", 1, 0); // Wysyłanie informacji o kolorze
 
-
-    // Create threads to handle communication for each client
+    // Tworzenie wątków do obsługi komunikacji z każdym klientem
     pthread_t thread1, thread2;
     pthread_create(&thread1, NULL, handle_client, (void *)&white_player);
     pthread_create(&thread2, NULL, handle_client, (void *)&black_player);
 
-    // Wait for both threads to finish
+    // Czekanie na zakończenie obu wątków
     pthread_join(thread1, NULL);
     pthread_join(thread2, NULL);
 
-    close(server_fd);
+    close(server_fd); // Zamknięcie gniazda serwera
     return 0;
 }
 
 void *handle_client(void *socket_desc) {
-    int client_socket = *(int *)socket_desc;
-    char buffer[BUF_SIZE];
-    int bytes_read;
+    int client_socket = *(int *)socket_desc; // Deskryptor gniazda klienta
+    char buffer[BUF_SIZE]; // Bufor do przechowywania wiadomości
+    int bytes_read; // Liczba przeczytanych bajtów
 
     while (1) {
-        pthread_mutex_lock(&mutex);
-
-        // Check whose turn it is
+        pthread_mutex_lock(&mutex); // Zablokowanie mutexu
+        // Sprawdzenie, czyja jest kolej
         if ((client_socket == white_player && turn == 0) ||
             (client_socket == black_player && turn == 1)) {
-            // Read message from the client
-            memset(buffer, 0, BUF_SIZE);
-            bytes_read = read(client_socket, buffer, BUF_SIZE);
+            // Odczytanie wiadomości od klienta
+            memset(buffer, 0, BUF_SIZE); // Czyszczenie bufora
+            bytes_read = read(client_socket, buffer, BUF_SIZE); // Odczyt danych z gniazda
             if (bytes_read <= 0) {
-                // Client has disconnected
+                // Klient się rozłączył
                 printf("Client disconnected.\n");
-                break;
+                close(white_player); // Zamknięcie połączenia z białym graczem
+                close(black_player); // Zamknięcie połączenia z czarnym graczem
+                pthread_mutex_unlock(&mutex); // Odblokowanie mutexu
+                exit(EXIT_SUCCESS); // Zakończenie programu
             }
-            printf("Client %d: %s\n", (client_socket == white_player) ? 1 : 2, buffer);
+            printf("Klient %d: %s\n", (client_socket == white_player) ? 1 : 2, buffer); // Wyświetlenie wiadomości od klienta
 
-            // Send the message to the other client
-            int other_socket = (client_socket == white_player) ? black_player : white_player;
-            send(other_socket, buffer, bytes_read, 0);
+            // Wysłanie wiadomości do drugiego klienta
+            int other_socket = (client_socket == white_player) ? black_player : white_player; // Określenie, kto jest drugim klientem
+            send(other_socket, buffer, bytes_read, 0); // Wysłanie wiadomości
 
-            // Switch turn
-            turn = !turn; // Toggle between 0 and 1
+            // Zmiana kolejności
+            turn = !turn; // Przełączenie między 0 i 1
         }
 
-        pthread_mutex_unlock(&mutex);
-        usleep(100000); // Sleep for a short time to avoid busy waiting
+        pthread_mutex_unlock(&mutex); // Odblokowanie mutexu
+        usleep(100000); // Uśpienie na krótki czas, aby uniknąć zajmowania zbyt wielu zasobów
     }
 
-    close(client_socket);
-    pthread_exit(NULL);
 }
